@@ -1,7 +1,0 @@
-ffmpeg-7.1-essentials_build/
-__pycache__/
-
-.gitignore
-_*.*
-config.py
-my_medical_records.json
