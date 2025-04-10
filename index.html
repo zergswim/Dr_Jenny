@@ -103,7 +103,7 @@
                     <div class="video-section">
 
                         <div>
-                            <img id="dr_state" src="dr_wait.png" width="250"/>
+                            <img id="dr_state" src="images/dr_wait.png" width="250"/>
                             <!-- 닥터 이미지 -->
                         </div>
 
@@ -249,14 +249,14 @@
                 //alert("Connection closed");
                 displayMessage("Connection closed");
                 stopTimer();
-                document.getElementById('dr_state').src = "dr_wait.png";
+                document.getElementById('dr_state').src = "images/dr_wait.png";
             };
 
             webSocket.onerror = (event) => {
                 //console.log("websocket error: ", URL);
                 //alert("websocket error: " + URL);
                 displayMessage("websocket error: " + URL);
-                document.getElementById('dr_state').src = "dr_wait.png";
+                document.getElementById('dr_state').src = "images/dr_wait.png";
             };
 
             webSocket.onopen = (event) => {
@@ -266,8 +266,8 @@
                 sendInitialSetupMessage();
                 startTimer();
 
-                // document.getElementById('dr_state').src = "dr_start.png";
-                document.getElementById('dr_state').src = "dr_start2.webp";
+                // document.getElementById('dr_state').src = "images/dr_start.png";
+                document.getElementById('dr_state').src = "images/dr_start2.webp";
             };
 
             webSocket.onmessage = receiveMessage;
