@@ -15,7 +15,7 @@
         <!-- User Box Cell -->
         <td style="padding: 0 15px; vertical-align: middle;">
           <div style="border: 1px solid #ccc; padding: 20px; text-align: center; background-color: #f8f8f8; border-radius: 5px; min-width: 120px; display: inline-block;">
-            <strong>User</strong> (Voice) ↔ 👩‍⚕️<strong>Dr. Jenny, AI Agent</strong><br>(Voice)
+            <strong>User</strong> (Voice) ↔ 👩‍⚕️<strong>Dr. Jenny, AI Agent</strong> (Voice)
           </div>
         </td>
       </tr>
