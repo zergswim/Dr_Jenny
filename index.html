@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+    <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+
+    <style>
+        #videoElement {
+            width: 640px;
+            height: 480px;
+            border-radius: 20px;
+        }
+
+        #canvasElement {
+            display: none;
+            width: 640px;
+            height: 480px;
+        }
+
+        .demo-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .video-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .button-group {
+            margin-bottom: 20px;
+        }
+
+        #chatLog {
+            width: 400px;
+            height: 560px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 0;
+            background-color: #f5f5f5;
+        }
+
+        #chatLog p {
+            margin: 8px 0;
+            padding: 12px;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+
+        #chatLog p:nth-child(odd) {
+            background-color: #e8eaf6;
+        }
+
+        #audioMeterContainer {
+            width: 80%; /* 전체 미터 컨테이너 너비 */
+            max-width: 250px; /* 최대 너비 */
+            height: 100px; /* 전체 미터 높이 (막대가 자랄 공간) */
+            /*border: 1px solid #000000;*/
+            background-color: #ffffff; /* 배경 */
+            padding: 10px; /* 내부 여백 */
+            border-radius: 5px;
+            display: flex; /* 막대들을 가로로 배열 */
+            align-items: center; /* !!! 중요: 막대들을 수직 중앙에 정렬 !!! */
+            justify-content: space-around; /* 막대들 사이에 공간 균등 배분 */
+            box-sizing: border-box;
+            margin-bottom: 20px; /* 버튼과의 간격 */
+        }
+
+        .meter-bar {
+            width: 6px; /* 각 막대의 너비 (고정값으로 설정) */
+            /* height: 4px; */ /* 초기 높이 - JS에서 설정 */
+            background-color: #ff9800; /* 주황색 */
+            /* box-shadow: 0 0 5px rgba(0, 0, 0, 0.8); */
+            border-radius: 2px; /* 양쪽 끝 둥글게 */
+            /* margin: 0 1px; */ /* justify-content 사용 시 간격 조정 */
+            transition: height 0.06s ease-out; /* 높이 변경 시 부드러운 효과 */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="mdl-layout mdl-js-layout mdl-layout--fixed-header">
+        <header class="mdl-layout__header"  style="background-color:#ff9800">
+            <div class="mdl-layout__header-row">
+                <!-- Title -->
+                <span class="mdl-layout-title">Dr. Jenny</span>
+            </div>
+        </header>
+        <main class="mdl-layout__content">
+            <div class="page-content">
+                <div class="demo-content">
+
+                    <div class="video-section">
+
+                        <div>
+                            <img id="dr_state" src="dr_wait.png" width="250"/>
+                            <!-- 닥터 이미지 -->
+                        </div>
+
+                        <div id="audioMeterContainer">
+                            <!-- 막대는 JavaScript로 동적 생성 -->
+                        </div>
+                        
+                        <!-- Voice Control Buttons -->
+                        <div class="button-group">
+                            <button id="startButton"
+                                class="mdl-button mdl-js-button mdl-button--fab mdl-button--mini-fab">
+                                <i class="material-icons">mic</i>
+                            </button>
+                            <button id="stopButton"
+                                class="mdl-button mdl-js-button mdl-button--fab mdl-button--mini-fab">
+                                <i class="material-icons">mic_off</i>
+                            </button>
+                        </div>
+
+                        <!-- Timer Output -->
+                        <div id="Timer_display" class="mdl-shadow--2dp"></div>
+
+                        <!-- Video Element -->
+                        <video id="videoElement" autoplay style="width: 640px; height: 480px;"></video>
+
+                        <!-- Hidden Canvas -->
+                        <canvas id="canvasElement" style="width: 640px; height: 480px;"></canvas>
+                    </div>
+
+                    <!-- Text Output -->
+                    <div id="chatLog" class="mdl-shadow--2dp" style="visibility: hidden;"></div>
+
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script defer>
+        const URL = "ws://localhost:9083";
+        // const URL = "wss://"+window.location.hostname+":9083";
+        // const URL = "ws://"+window.location.hostname+":9083";
+        const video = document.getElementById("videoElement");
+        const canvas = document.getElementById("canvasElement");
+        let context;
+
+        // Initialize context here
+        // window.addEventListener("load", () => {
+        //     context = canvas.getContext("2d");
+        //     setInterval(captureImage, 3000);
+        // });
+
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        let stream = null;
+        let currentFrameB64;
+        let webSocket = null;
+        let audioContext = null;
+        let mediaRecorder = null;
+        let processor = null;
+        let pcmData = [];
+        let interval = null;
+        let initialized = false;
+        let audioInputContext;
+        let workletNode;
+
+        let analyserNode;
+        let audioDataArray; // AnalyserNode 데이터 저장 배열        
+        let audioProcessingFrameId = null;
+        
+        class Response {
+            constructor(data) {
+                this.text = null;
+                this.audioData = null;
+                this.endOfTurn = null;
+
+                if (data.text) {
+                    this.text = data.text
+                }
+
+                if (data.audio) {
+                    this.audioData = data.audio;
+                }
+            }
+        }        
+
+        // Function to start screen capture
+        async function startScreenShare() {
+            try {
+                stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        width: { max: 640 },
+                        height: { max: 480 },
+                    },
+                });
+
+                video.srcObject = stream;
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        console.log("video loaded metadata");
+                        resolve();
+                    }
+                });
+
+            } catch (err) {
+                console.error("Error accessing the screen: ", err);
+            }
+        }
+
+
+        // Function to capture an image from the shared screen
+        function captureImage() {
+            if (stream && video.videoWidth > 0 && video.videoHeight > 0 && context) {
+                canvas.width = 640;
+                canvas.height = 480;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = canvas.toDataURL("image/jpeg").split(",")[1].trim();
+                currentFrameB64 = imageData;
+            }
+            else {
+                console.log("no stream or video metadata not loaded");
+            }
+        }
+
+
+
+        window.addEventListener("load", async () => {
+            //await startScreenShare();
+            //setInterval(captureImage, 3000);
+
+            // Initialize audio context right away
+            await initializeAudioContext();
+
+            connect();
+        });
+
+        function connect() {
+            console.log("connecting: ", URL);
+
+            webSocket = new WebSocket(URL);
+
+            webSocket.onclose = (event) => {
+                //console.log("websocket closed: ", event);
+                //alert("Connection closed");
+                displayMessage("Connection closed");
+                stopTimer();
+                document.getElementById('dr_state').src = "dr_wait.png";
+            };
+
+            webSocket.onerror = (event) => {
+                //console.log("websocket error: ", URL);
+                //alert("websocket error: " + URL);
+                displayMessage("websocket error: " + URL);
+                document.getElementById('dr_state').src = "dr_wait.png";
+            };
+
+            webSocket.onopen = (event) => {
+                //console.log("websocket open: ", event);
+                //alert("websocket open: " + URL);
+                displayMessage("websocket open: " + URL);
+                sendInitialSetupMessage();
+                startTimer();
+
+                // document.getElementById('dr_state').src = "dr_start.png";
+                document.getElementById('dr_state').src = "dr_start2.webp";
+            };
+
+            webSocket.onmessage = receiveMessage;
+        }
+
+        function sendInitialSetupMessage() {
+
+            console.log("sending setup message");
+            setup_client_message = {
+                setup: {
+                    generation_config: { response_modalities: ["AUDIO"] },
+                },
+            };
+
+            webSocket.send(JSON.stringify(setup_client_message));
+        }
+
+
+        function sendVoiceMessage(b64PCM) {
+            if (webSocket == null) {
+                console.log("websocket not initialized");
+                return;
+            }
+
+            payload = {
+                realtime_input: {
+                    media_chunks: [{
+                        mime_type: "audio/pcm",
+                        data: b64PCM,
+                    },
+                    {
+                        mime_type: "image/jpeg",
+                        data: currentFrameB64,
+                    },
+                    ],
+                },
+            };
+
+            webSocket.send(JSON.stringify(payload));
+            //console.log("sent: ", payload);
+        }
+   
+
+        // --- 전역 변수 또는 클래스 멤버 변수로 선언 ---
+        const audioQueue = []; // 수신된 오디오 데이터(Base64)를 저장할 큐
+        let isProcessingAudio = false; // 현재 오디오 큐를 처리 중인지 여부 플래그
+        let isWorkletBufferLow = false; // 워크렛 버퍼가 부족한지 여부 (백프레셔 플래그)
+        const workletBufferLowThreshold = 4096 * 10; // 예: 버퍼 남은 공간이 4개 청크 미만이면 low (값 튜닝 필요)
+
+        async function initializeAudioContext() {
+            if (initialized) return;
+
+            audioInputContext = new (window.AudioContext ||
+                window.webkitAudioContext)({
+                sampleRate: 24000
+            });
+
+            // 사용자 상호작용 시 resume 보장 (예: startButton 클릭 리스너 내부에 추가)
+            // 또는 초기화 시점에 한 번 시도 (성공 보장은 없음)
+            if (audioInputContext.state === 'suspended') {
+                console.log("AudioContext suspended, attempting resume (may need user interaction)...");
+                // 여기서는 resume()만 호출하고, 실제로는 버튼 클릭 등에서 확실히 resume 시켜야 함
+                // await audioInputContext.resume(); // 초기 로드 시에는 실패할 수 있음
+            }
+
+            // (추가) AnalyserNode 생성 및 설정
+            analyserNode = audioInputContext.createAnalyser();
+            analyserNode.fftSize = 256;
+            analyserNode.smoothingTimeConstant = 0.5;
+
+            await audioInputContext.audioWorklet.addModule("pcm-processor.js");
+            workletNode = new AudioWorkletNode(audioInputContext, "pcm-processor");
+
+            // workletNode.connect(audioInputContext.destination);
+
+            workletNode.connect(analyserNode);
+            analyserNode.connect(audioInputContext.destination);
+
+
+            // --- 워크렛으로부터 메시지 수신 (백프레셔 상태 업데이트) ---
+            // workletNode.port.onmessage = (event) => {
+
+            //     console.log("[DEBUG] Received message from worklet(TYPE):", event.data.type);
+            //     console.log("[DEBUG] Received message from worklet(DATA):", event.data);
+
+            //     if (event.data.type === 'bufferStatus') {
+            //         const availableWrite = event.data.availableWrite;
+            //         const oldStatus = isWorkletBufferLow;
+
+            //         isWorkletBufferLow = availableWrite < workletBufferLowThreshold;
+
+            //         // 로그 추가: 상태 변경 및 사용 가능한 공간 확인
+            //         if (oldStatus !== isWorkletBufferLow) {
+            //             console.log(`[MainThread] Back-pressure status changed. isLow: ${isWorkletBufferLow} (Available: ${availableWrite}, Threshold: ${workletBufferLowThreshold})`);
+            //         }
+
+            //         if (oldStatus && !isWorkletBufferLow) {
+            //             console.log("[MainThread] Worklet buffer has sufficient space again. Attempting to resume queue processing.");
+            //             processAudioQueue(); // 큐 처리 재개 시도
+            //         }
+            //         // console.log(`[MainThread] Buffer status update: availableWrite=${availableWrite}, isLow=${isWorkletBufferLow}`); // 디버깅 로그
+            //     }
+            //     // ... 다른 워크렛 메시지 타입 처리
+            //     // === 레벨 미터 업데이트 로직 추가 ===
+            //     else if (event.data.type === 'audioLevel') {
+            //         const rms = event.data.level;
+            //         // RMS 값(0~1)을 퍼센트(0~100)로 변환.
+            //         // RMS는 보통 작게 나오므로, 시각적으로 잘 보이게 하기 위해 증폭 계수(예: 1.5 또는 2)를 곱할 수 있음.
+            //         // 데시벨(dB)로 변환하여 표시하는 것이 더 표준적이지만, 여기서는 간단히 RMS 기반으로 구현.
+            //         const scalingFactor = 2.0; // 증폭 계수 (필요에 따라 조정)
+            //         let percentage = rms * scalingFactor * 100;
+
+            //         // 100%를 넘지 않도록 제한
+            //         percentage = Math.min(100, Math.max(0, percentage));
+
+            //         console.log("[DEBUG] Audio level: ${percentage}%"); // 디버깅 로그
+
+            //         // 막대 그래프 높이 업데이트
+            //         // if (audioMeterBar) {
+            //         //     audioMeterBar.style.height = percentage + '%';
+            //         // }
+            //     }                
+            // };
+
+            initMeter();// (추가) 시각화 초기화 함수 호출
+            audioProcessingLoop(); // (추가)시각화 업데이트 루프 시작
+
+            initialized = true;
+            console.log("AudioContext initialized, state:", audioInputContext.state);            
+        }     
+
+        // --- Analyser 데이터 처리 및 시각화 업데이트 루프 ---
+        function audioProcessingLoop() {
+            // 다음 프레임 예약
+            audioProcessingFrameId = requestAnimationFrame(audioProcessingLoop);
+
+            // if (!analyserNode || !audioDataArray || !audioVisualizer) return;
+
+            // 1. Analyser에서 데이터 가져오기
+            const bufferLength = analyserNode.frequencyBinCount;
+            // audioDataArray = new Float32Array(bufferLength);
+            const audioDataArray2 = new Uint8Array(bufferLength); // 주파수 데이터 담을 배열
+
+            analyserNode.getByteFrequencyData(audioDataArray2); // 주파수 데이터 업데이트
+            // console.log("[DEBUG] audioDataArray2: ", audioDataArray2.length); // 디버깅 로그 //128?
+
+            // dataArray 값을 사용하여 막대 높이 설정
+            const maxPossibleHeight = meterContainer.offsetHeight - (2 * 10);
+            const barWidth = meterContainer.offsetWidth / bufferLength; // 막대 너비 계산
+
+            barElements.forEach((bar, index) => {
+                // dataArray 값 (0~255)을 높이 비율(0~100)로 변환
+                // const value = audioDataArray2[index];
+                const value = audioDataArray2[index*2];
+                const percent = value / 255 * 100;
+
+                let targetHeightPx = (percent / 100) * maxPossibleHeight;
+                targetHeightPx = Math.max(minBarHeightPx, targetHeightPx);
+
+                bar.style.height = `${targetHeightPx}px`;
+                // bar.style.width = `${barWidth}px`; // 필요시 너비도 조절
+
+                // 색상 변경 등 추가 효과 적용 가능
+                // updateBarColor(bar, percent);
+            });            
+
+            // analyserNode.getFloatTimeDomainData(audioDataArray);
+
+            // // 2. RMS 계산
+            // let sumOfSquares = 0;
+            // for (let i = 0; i < audioDataArray.length; i++) {
+            //     sumOfSquares += audioDataArray[i] * audioDataArray[i];
+            // }
+            // const meanSquare = sumOfSquares / audioDataArray.length;
+            // const rms = Math.sqrt(meanSquare); // 0.0 ~ 1.0 범위의 값
+
+            // //console.log("[DEBUG] RMS Level: ", rms); // 디버깅 로그
+
+            // // 3. 계산된 RMS 값을 Visualizer에 전달
+            // updateMeterVisuals(rms); // 시각적 업데이트 호출
+            // // audioVisualizer.setLevel(rms);
+        }        
+
+
+        // --- 서버로부터 메시지 수신 ---
+        // receiveMessage 함수는 이전과 동일하게 유지
+        function receiveMessage(event) {
+            //console.log("receive: ", event.type);
+            try {
+                const messageData = JSON.parse(event.data);
+                const response = new Response(messageData); // Response 클래스 정의 확인!
+                if (response.text) {
+                    displayMessage(response.text);
+                }
+                if (response.audioData) {
+                    audioQueue.push(response.audioData);
+                    processAudioQueue(); // 큐 처리 시도
+                }
+            } catch (error) {
+                console.error("[MainThread] Error in receiveMessage:", error);
+            }
+        }
+
+
+        // --- 오디오 큐 처리 함수 ---
+        async function processAudioQueue() {
+            //console.log("processAudioQueue:", isProcessingAudio, isWorkletBufferLow, audioQueue.length);
+            // 이미 다른 루프가 실행 중이면 중복 실행 방지
+            if (isProcessingAudio) {
+                return;
+            }
+
+            // 처리 시작 플래그 설정
+            isProcessingAudio = true;
+            // console.log("[MainThread] Starting audio queue processing...");
+
+            // 큐에 데이터가 있고, 워크렛 버퍼가 부족하지 않은 동안 계속 처리
+            while (audioQueue.length > 0 && !isWorkletBufferLow) {
+                // 큐에서 가장 오래된 데이터 가져오기
+                const audioDataToProcess = audioQueue.shift(); // Dequeue
+
+                // console.log(`[MainThread] Processing chunk from queue. Remaining: ${audioQueue.length}`);
+
+                try {
+                    // injestAudioChuckToPlay는 내부적으로 데이터를 더 작은 조각(4096)으로 나누어 postMessage 호출
+                    await injestAudioChuckToPlay(audioDataToProcess);
+                } catch (error) {
+                    console.error("[MainThread] Error during injestAudioChuckToPlay from queue:", error);
+                    // 에러 발생 시 해당 청크는 건너뛰고 계속 진행할지, 아니면 멈출지 결정 필요
+                }
+
+                // 중요: 다음 루프 반복 전에 잠시 Event Loop에 제어권 양보
+                // 이렇게 하면 UI 렌더링이나 다른 작업이 막히는 것을 방지
+                await new Promise(resolve => setTimeout(resolve, 0)); // 0ms setTimeout 사용
+            }
+
+            // 처리 종료 (큐가 비었거나, 버퍼가 부족하여 중단됨)
+            isProcessingAudio = false;
+
+            if (audioQueue.length > 0 && isWorkletBufferLow) {
+                console.log("[MainThread] Paused queue processing due to low worklet buffer.");
+            } else {
+                // console.log("[MainThread] Finished processing audio queue (empty).");
+            }
+        }
+
+        // --- injestAudioChuckToPlay 함수 (수정됨) ---
+        // function calculateDecibels(subChunk) {
+        //     if (!subChunk || subChunk.length === 0) {
+        //         // 빈 청크 처리: 침묵으로 간주하거나 오류를 발생시킬 수 있습니다.
+        //         // 여기서는 -Infinity (절대 침묵)를 반환합니다.
+        //         return -Infinity;
+        //     }
+
+        //     let sumOfSquares = 0;
+        //     for (let i = 0; i < subChunk.length; i++) {
+        //         const sample = subChunk[i];
+        //         sumOfSquares += sample * sample; // 각 샘플 값을 제곱하여 더합니다.
+        //     }
+
+        //     // 제곱합의 평균 (Mean Square) 계산
+        //     const meanSquare = sumOfSquares / subChunk.length;
+
+        //     // 평균 제곱근 (Root Mean Square, RMS) 계산
+        //     // RMS는 신호의 유효 진폭 또는 "파워"를 나타냅니다.
+        //     const rms = Math.sqrt(meanSquare);
+
+        //     // RMS가 0인 경우 (완전한 침묵) 처리
+        //     if (rms === 0) {
+        //         return -Infinity; // 로그 계산 불가, 이론적으로 무한히 작은 데시벨
+        //         // 또는 실제적인 최소값 (예: -96 또는 -120)을 반환할 수도 있습니다.
+        //         // return -96;
+        //     }
+
+        //     // dBFS 계산: 20 * log10(RMS / 기준 진폭)
+        //     // Float32Array가 -1.0 ~ 1.0 범위라고 가정하므로, 최대 진폭(Full Scale)은 1.0입니다.
+        //     // 따라서 기준 진폭은 1.0 이고, 공식은 20 * log10(RMS) 가 됩니다.
+        //     const dbValue = 20 * Math.log10(rms);
+
+        //     return dbValue;
+        // }
+
+        const WORKLET_SUB_CHUNK_SIZE = 4096;
+        async function injestAudioChuckToPlay(base64AudioChunk) {
+            try {
+                // if (audioInputContext.state === "suspended") {
+                //     await audioInputContext.resume();
+                // }
+
+                const arrayBuffer = base64ToArrayBuffer(base64AudioChunk);
+                const float32Data = convertPCM16LEToFloat32(arrayBuffer);
+                const totalSamples = float32Data.length;
+                if (totalSamples === 0) return;
+
+                // 데이터를 WORKLET_SUB_CHUNK_SIZE 크기로 잘라서 보내는 루프
+                for (let i = 0; i < totalSamples; i += WORKLET_SUB_CHUNK_SIZE) {
+                    // **** 중요: 각 하위 청크를 보내기 직전에 버퍼 상태 다시 확인 ****
+                    if (isWorkletBufferLow) {
+                        console.warn(`[injestAudioChuckToPlay] Stopping mid-chunk processing because worklet buffer is low. Re-queuing remaining data.`);
+                        // 현재 처리 중인 청크의 남은 부분을 다시 큐의 맨 앞에 넣음
+                        // (주의: base64 재인코딩 또는 Float32Array 상태 유지 필요 - 여기서는 간단히 현재 청크 처리 중단)
+
+                        // 방법 1: 현재 청크의 남은 부분을 base64로 다시 인코딩하여 큐에 넣기 (복잡함)
+                        // 방법 2: 현재 Float32Array의 남은 부분을 임시 저장하고 다음 processAudioQueue에서 처리 (상태 관리 필요)
+                        // 방법 3 (가장 간단): 현재 청크 처리를 그냥 중단하고, 원래 base64 청크를 다시 큐 앞에 넣기
+                        audioQueue.unshift(base64AudioChunk); // 원본 base64를 다시 큐 앞에 넣음 (비효율적일 수 있음)
+                        return; // 현재 함수 종료 -> processAudioQueue 루프도 종료됨
+                    }
+
+                    const endIndex = Math.min(i + WORKLET_SUB_CHUNK_SIZE, totalSamples);
+                    const subChunk = float32Data.subarray(i, endIndex);
+
+                    //console.log(`[DEBUG] Sending sub-chunk: ${calculateDecibels(subChunk).toFixed(2)} dBFS`); // 디버깅 로그
+                    workletNode.port.postMessage(subChunk);
+
+                    // 아주 짧은 지연 추가 (선택 사항, CPU 부하 분산)
+                    // await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            } catch (error) {
+                console.error("[MainThread] Error processing audio chunk in injest:", error);
+                // 에러 발생 시에도 큐에 다시 넣을지 결정 필요
+                // audioQueue.unshift(base64AudioChunk); // 예: 에러 시 다시 시도하도록 큐에 넣기
+            }
+        }
+
+        // function receiveMessage(event) {
+        //     console.log("receive: ", event.type);
+
+        //     const messageData = JSON.parse(event.data);
+        //     const response = new Response(messageData);
+
+        //     if (response.text) {
+        //         // displayMessage("GEMINI: " + response.text);
+        //         displayMessage(response.text);
+        //     }
+        //     if (response.audioData) {
+        //         injestAudioChuckToPlay(response.audioData);
+        //     }
+        // }
+
+
+
+
+        // function base64ToArrayBuffer(base64) {
+        //     const binaryString = window.atob(base64);
+        //     const bytes = new Uint8Array(binaryString.length);
+        //     for (let i = 0; i < binaryString.length; i++) {
+        //         bytes[i] = binaryString.charCodeAt(i);
+        //     }
+        //     return bytes.buffer;
+        // }
+
+        // function convertPCM16LEToFloat32(pcmData) {
+        //     const inputArray = new Int16Array(pcmData);
+        //     const float32Array = new Float32Array(inputArray.length);
+
+        //     for (let i = 0; i < inputArray.length; i++) {
+        //         float32Array[i] = inputArray[i] / 32768;
+        //     }
+
+        //     return float32Array;
+        // }
+
+        // async function injestAudioChuckToPlay(base64AudioChunk) {
+        //     try {
+        //         if (audioInputContext.state === "suspended") {
+        //             await audioInputContext.resume();
+        //         }
+        //         const arrayBuffer = base64ToArrayBuffer(base64AudioChunk);
+        //         const float32Data = convertPCM16LEToFloat32(arrayBuffer);
+
+        //         workletNode.port.postMessage(float32Data);
+        //     } catch (error) {
+        //         console.error("Error processing audio chunk:", error);
+        //     }
+        // }
+
+        // 워크렛으로 보낼 하위 청크의 적절한 크기를 정의합니다. (예: 4096 샘플)
+        // 1024, 2048, 4096 등이 일반적입니다. 오버플로우가 발생하지 않는 적절한 크기를 찾아야 할 수 있습니다.
+        // const WORKLET_SUB_CHUNK_SIZE = 4096; // 샘플 수 기준
+
+        // async function injestAudioChuckToPlay(base64AudioChunk) {
+        //     try {
+        //         if (audioInputContext.state === "suspended") {
+        //             await audioInputContext.resume();
+        //         }
+        //         const arrayBuffer = base64ToArrayBuffer(base64AudioChunk);
+        //         const float32Data = convertPCM16LEToFloat32(arrayBuffer);
+
+        //         const totalSamples = float32Data.length;
+
+        //         // 받은 데이터가 비어있으면 아무것도 안 함
+        //         if (totalSamples === 0) {
+        //             return;
+        //         }
+
+        //         // --- 데이터 분할 및 전송 로직 ---
+        //         // console.log(`[MainThread] Received large chunk: ${totalSamples} samples. Chunking into pieces <= ${WORKLET_SUB_CHUNK_SIZE}...`); // 디버깅 로그
+
+        //         for (let i = 0; i < totalSamples; i += WORKLET_SUB_CHUNK_SIZE) {
+        //             // 현재 루프에서 보낼 하위 청크의 끝 인덱스 계산
+        //             const endIndex = Math.min(i + WORKLET_SUB_CHUNK_SIZE, totalSamples);
+
+        //             // subarray()는 데이터를 복사하지 않고 뷰(view)를 생성하므로 효율적입니다.
+        //             const subChunk = float32Data.subarray(i, endIndex);
+
+        //             // console.log(`[MainThread] Sending sub-chunk: ${subChunk.length} samples (Offset: ${i})`); // 디버깅 로그
+
+        //             // 분할된 작은 청크를 워크렛으로 전송
+        //             workletNode.port.postMessage(subChunk);
+
+        //             // 중요: 만약 서버에서 오는 base64AudioChunk 자체가 매우 빠르게 연속적으로 도착한다면,
+        //             // 이 루프 내에서 또는 injestAudioChuckToPlay 함수 호출 자체에 약간의 지연(throttling)을
+        //             // 추가하는 것을 고려해야 할 수도 있습니다. 하지만 우선 분할만 적용해봅니다.
+        //             // 예: await new Promise(resolve => setTimeout(resolve, 1)); // 1ms 지연 (필요시에만)
+        //         }
+        //         // --- 분할 로직 끝 ---
+
+        //     } catch (error) {
+        //         console.error("Error processing audio chunk:", error);
+        //     }
+        // }
+
+        // --- 필요한 헬퍼 함수들 (예시) ---
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function convertPCM16LEToFloat32(arrayBuffer) {
+            const dataView = new DataView(arrayBuffer);
+            const numSamples = arrayBuffer.byteLength / 2; // 16비트 = 2바이트
+            const float32Array = new Float32Array(numSamples);
+
+            for (let i = 0; i < numSamples; i++) {
+                // 16비트 Little Endian 형식으로 정수 읽기
+                const int16 = dataView.getInt16(i * 2, true); // true for Little Endian
+                // -1.0 ~ 1.0 범위의 float으로 변환
+                float32Array[i] = int16 / 32768.0; // 32768 = 2^15
+            }
+            return float32Array;
+        }        
+
+
+        function recordChunk() {
+            const buffer = new ArrayBuffer(pcmData.length * 2);
+            const view = new DataView(buffer);
+            pcmData.forEach((value, index) => {
+                view.setInt16(index * 2, value, true);
+            });
+
+            const base64 = btoa(
+                String.fromCharCode.apply(null, new Uint8Array(buffer))
+            );
+
+            sendVoiceMessage(base64);
+            pcmData = [];
+        }
+
+        async function startAudioInput() {
+            audioContext = new AudioContext({
+                sampleRate: 16000,
+            });
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    channelCount: 1,
+                    sampleRate: 16000,
+                },
+            });
+
+            const source = audioContext.createMediaStreamSource(stream);
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            processor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcm16 = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                    pcm16[i] = inputData[i] * 0x7fff;
+                }
+                pcmData.push(...pcm16);
+            };
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            interval = setInterval(recordChunk, 3000);
+
+            //배경처리 추가
+            startButton.classList.add('mdl-button--colored');
+            stopButton.classList.remove('mdl-button--colored');
+        }
+
+        function stopAudioInput() {
+            if (processor) {
+                processor.disconnect();
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+
+            clearInterval(interval);
+            //cancelAnimationFrame(audioProcessingFrameId);
+
+            //배경처리 추가
+            startButton.classList.remove('mdl-button--colored');
+            stopButton.classList.add('mdl-button--colored');
+        }
+
+        function displayMessage(message) {
+            console.log(message);
+            addParagraphToDiv("chatLog", message);
+        }
+
+
+        function addParagraphToDiv(divId, text) {
+            const newParagraph = document.createElement("p");
+            newParagraph.textContent = text;
+            const div = document.getElementById(divId);
+            div.appendChild(newParagraph);
+        }
+
+        startButton.addEventListener('click', startAudioInput);
+        stopButton.addEventListener('click', stopAudioInput);
+
+        // 예시: startButton 클릭 리스너에 추가
+        startButton.addEventListener('click', async () => {
+            // 오디오 입력 컨텍스트 초기화 및 시작 (필요 시)
+            // await startAudioInput();
+
+            // 오디오 출력 컨텍스트 상태 확인 및 재개
+            if (audioInputContext && audioInputContext.state === 'suspended') {
+                console.log("[MainThread] Resuming Playback AudioContext due to user interaction...");
+                try {
+                    await audioInputContext.resume();
+                    console.log("[MainThread] Playback AudioContext state:", audioInputContext.state);
+                } catch (err) {
+                    console.error("[MainThread] Failed to resume Playback AudioContext:", err);
+                    alert("오디오 재생을 시작할 수 없습니다. 브라우저 설정을 확인하세요.");
+                }
+            }
+
+            // 타이머 시작 (기존 코드)
+            // startTimer();
+        });
+
+        //timer 처리 부분
+        let timerInterval; // setInterval을 저장할 변수
+        let timeLeft = 600; // 남은 시간 (초), 10분 = 600초
+        const timerDisplay = document.getElementById('Timer_display');
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(timeLeft / 60); // 분 계산
+            const seconds = timeLeft % 60; // 초 계산
+
+            const formattedMinutes = String(minutes).padStart(2, '0'); // 분을 두 자리 문자열로 (한 자리 수일 경우 앞에 0 추가)
+            const formattedSeconds = String(seconds).padStart(2, '0'); // 초를 두 자리 문자열로 (한 자리 수일 경우 앞에 0 추가)
+
+            timerDisplay.textContent = `${formattedMinutes}:${formattedSeconds}`; // MM:SS 형식으로 표시
+        }
+
+        function startTimer() {
+            if (timerInterval) { // 이미 타이머가 작동 중이면 중복 실행 방지 (선택 사항)
+                return;
+            }
+
+            timeLeft = 600; // 타이머 시작 시 남은 시간 초기화 (필요에 따라)
+            updateTimerDisplay(); // 시작 시 초기 시간 표시
+
+            timerInterval = setInterval(function() {
+                timeLeft--; // 1초 감소
+
+                if (timeLeft < 0) {
+                    clearInterval(timerInterval); // 타이머 종료
+                    timerInterval = null; // interval 변수 초기화
+                    timerDisplay.textContent = "Time's up!"; // 또는 timerDisplay.textContent = "00:00";
+                    // 타이머 종료 후 추가 동작 (예: 알림, 특정 기능 실행 등) 을 여기에 작성 가능
+                } else {
+                    updateTimerDisplay(); // 남은 시간 업데이트 및 표시
+                }
+            }, 1000); // 1초마다 interval 함수 실행
+        }
+
+        function stopTimer() { // stopTimer 함수 추가
+            clearInterval(timerInterval); // 타이머 중지
+            timerInterval = null; // interval 변수 초기화
+            timeLeft = 600; // 남은 시간 초기화 (10분)
+            updateTimerDisplay(); // 화면을 초기 시간으로 업데이트
+        }
+
+        // startButton.addEventListener('click', startTimer); // startButton 클릭 시 startTimer 함수 호출
+        // stopButton.addEventListener('click', stopTimer);   // stopButton 클릭 시 stopTimer 함수 호출 (추가)
+
+        // 페이지 로드 시 초기 Timer_display 설정 (선택 사항)
+        updateTimerDisplay(); // 페이지 로드 시 10:00 으로 초기 표시 (원치 않으면 삭제) 
+
+        //시각화 부분
+        const meterContainer = document.getElementById('audioMeterContainer');
+        const numberOfBars = 15; // 표시할 막대 수 (조절 가능)
+        const barElements = []; // 생성된 막대 요소 저장 배열
+        const minBarHeightPx = 4; // 막대의 최소 높이 (중앙선 두께처럼 보임)
+        let simulationInterval = null; // setInterval ID 저장 변수
+        const updateIntervalMs = 65; // 업데이트 간격 (밀리초)
+        const scalingFactor = 1.4; // 레벨 값 증폭 계수
+        let currentMasterLevel = 0; // 전체 오디오 레벨
+
+        // 막대 요소 동적 생성 및 초기화 함수
+        function initMeter() {
+            meterContainer.innerHTML = ''; // 기존 막대 삭제
+            barElements.length = 0; // 배열 비우기
+
+            const containerHeight = meterContainer.offsetHeight; // 컨테이너 높이 가져오기
+
+            for (let i = 0; i < numberOfBars; i++) {
+                const bar = document.createElement('div');
+                bar.classList.add('meter-bar');
+                // 초기 높이 설정 (최소 높이)
+                bar.style.height = `${minBarHeightPx}px`;
+                // 막대 너비 (선택 사항: CSS에서 고정하거나 여기서 설정)
+                // bar.style.width = '6px';
+                meterContainer.appendChild(bar);
+                barElements.push(bar); // 배열에 추가
+            }
+             // 초기 상태는 모두 최소 높이 (이미 위에서 설정됨)
+             // updateMeterVisuals(0); // 필요 없음
+        }
+
+        // 시각적 업데이트 로직
+        // function updateMeterVisuals(masterLevel) { // masterLevel은 0 ~ 1 사이 값
+        //     // 0 ~ 1 값을 퍼센트(0 ~ 100)로 변환하고 증폭
+        //     let basePercentage = masterLevel * scalingFactor * 100;
+        //     basePercentage = Math.min(100, Math.max(0, basePercentage)); // 0~100 제한
+
+        //     // 컨테이너의 실제 높이를 기준으로 최대 막대 높이 계산 (패딩 등 고려)
+        //     const maxPossibleHeight = meterContainer.offsetHeight - (2 * 10); // 상하 패딩 제외
+
+        //     // 각 막대의 높이를 설정 (가운데 패턴 적용)
+        //      barElements.forEach((bar, index) => {
+        //          const distanceFromCenter = Math.abs(index - (numberOfBars - 1) / 2) / (numberOfBars / 2);
+        //          const attenuation = Math.cos(distanceFromCenter * Math.PI / 2);
+        //          let randomFactor = 0.9 + Math.random() * 0.2;
+
+        //          // 최종 높이 비율 계산
+        //          let individualHeightPercentage = basePercentage * attenuation * randomFactor;
+        //          individualHeightPercentage = Math.min(100, Math.max(0, individualHeightPercentage));
+
+        //          // 최종 높이를 픽셀로 계산하고 최소 높이 보장
+        //          let targetHeightPx = (individualHeightPercentage / 100) * maxPossibleHeight;
+        //          targetHeightPx = Math.max(minBarHeightPx, targetHeightPx); // 최소 높이 적용
+
+        //          // 높이를 px로 설정
+        //          bar.style.height = `${targetHeightPx}px`;
+        //      });
+        // }        
+
+    </script>
+
+</body>
+
+</html>
