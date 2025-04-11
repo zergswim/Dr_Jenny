@@ -29,6 +29,8 @@ RCV_TRANSCRIP = cfg.RCV_TRANSCRIP
 #이전 메디컬 블럭체인 정보 보기
 my_medical_chain = mb.MedicalBlockchain.load_chain()
 
+#blockchain 에 signature 로 데이터 위변조를 막도록 데이터에 대한 해쉬코드가 들어가는 것 고려
+
 client = genai.Client(
   http_options={
     'api_version': 'v1alpha',
