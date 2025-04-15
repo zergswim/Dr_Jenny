@@ -17,6 +17,10 @@ import numpy as np
 import mediblock as mb
 import config as cfg #define config.py
 
+import timer
+import music_play
+
+
 # Load API key from environment
 os.environ['GOOGLE_API_KEY'] = cfg.GOOGLE_API_KEY
 generative.configure(api_key=os.environ['GOOGLE_API_KEY'])
@@ -179,6 +183,11 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
             }
         }
 
+        get_remaining_timer_time = timer.get_remaining_time_function_json
+
+        list_music_files = music_play.list_files_function_json
+        play_music_file = music_play.play_file_function_json
+
         async def fn_turn_on_the_lights():
             print("fn_turn_on_the_lights: OK")
             # print("fn_turn_on_the_lights:", args)
@@ -233,15 +242,20 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                     "tools":[
                         {"google_search": {}},
                         # {'code_execution': {}},
-                        {'function_declarations': [summarize_mental_care_session, retrieve_recent_mental_care_sessions, turn_on_the_lights_schema, turn_off_the_lights_schema]}
+                        {'function_declarations': [summarize_mental_care_session, retrieve_recent_mental_care_sessions, get_remaining_timer_time, list_music_files, play_music_file, turn_on_the_lights_schema, turn_off_the_lights_schema]}
                     ],
                     #automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)                    
                 }
+        
+        # print(">> config:", config)
          
-
         async with client.aio.live.connect(model=MODEL, config=config) as session:
             session.isPlaying = False
             print("Connected to Gemini API")
+
+            print(">> 타이머 시작:")
+            result_start = timer.start_consultation_timer()
+            print(f"결과: {result_start}\n") # status: started 예상            
 
             async def send_to_gemini():
                 """Sends messages from the client websocket to the Gemini API."""
@@ -277,7 +291,7 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                         "text": "L:"+transcribed_text
                                                     }))
                                         else:
-                                            #print("[OK]Sended to Gemini:", len(chunk["data"]), len(temp))
+                                            # print("[OK]Sended to Gemini:", len(chunk["data"]), len(temp))
                                             await session.send({"mime_type": "audio/pcm", "data": chunk["data"]})
                                         
                                     elif chunk["mime_type"] == "image/jpeg":
@@ -310,6 +324,7 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                     while True:
                         try:
                             print("receiving from gemini")
+
                             async for response in session.receive():
                                 if response.server_content is None:
                                     #print(f'Unhandled server message! - {response}')
@@ -330,13 +345,19 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                 function_to_call = fn_summarize_mental_care_session
                                             if function_name == 'retrieve_recent_mental_care_sessions':
                                                 function_to_call = fn_retrieve_recent_mental_care_sessions
+                                            if function_name == 'get_remaining_timer_time':
+                                                function_to_call = timer.get_remaining_timer_time
+                                            if function_name == 'list_music_files':
+                                                function_to_call = music_play.list_music_files
+                                            if function_name == 'play_music_file':
+                                                function_to_call = music_play.play_music_file
                                             # ... 다른 함수들도 필요하면 추가 ...
 
                                             if function_to_call:
                                                 # 3. 결과 얻기
                                                 # result = await function_to_call(**arguments) # **로 딕셔너리 인자 전달
                                                 result = await function_to_call(arguments) # **로 딕셔너리 인자 전달
-                                                print(f"[FN] 함수 실행 결과: {result}")
+                                                # print(f"[FN] 함수 실행 결과: {result}")
                                                 # print("[FN] call_info:", call_info)
 
                                                 msg = [{
@@ -514,6 +535,7 @@ async def main() -> None:
     # async with websockets.serve(gemini_session_handler, "0.0.0.0", 9083, ssl=ssl_context):
     async with websockets.serve(gemini_session_handler, "0.0.0.0", 9083):
         print("Running websocket server 0.0.0.0:9083...")
+
         await asyncio.Future()  # Keep the server running indefinitely
 
 

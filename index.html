@@ -227,18 +227,6 @@
             }
         }
 
-
-
-        window.addEventListener("load", async () => {
-            //await startScreenShare();
-            //setInterval(captureImage, 3000);
-
-            // Initialize audio context right away
-            await initializeAudioContext();
-
-            connect();
-        });
-
         function connect() {
             console.log("connecting: ", URL);
 
@@ -267,7 +255,7 @@
                 startTimer();
 
                 // document.getElementById('dr_state').src = "images/dr_start.png";
-                document.getElementById('dr_state').src = "images/dr_start2.webp";
+                document.getElementById('dr_state').src = "images/dr_start3.webp";
             };
 
             webSocket.onmessage = receiveMessage;
@@ -307,7 +295,7 @@
             };
 
             webSocket.send(JSON.stringify(payload));
-            //console.log("sent: ", payload);
+            // console.log("sent: ", payload);
         }
    
 
@@ -718,6 +706,21 @@
         }        
 
 
+        // function recordChunk() {
+        //     const buffer = new ArrayBuffer(pcmData.length * 2);
+        //     const view = new DataView(buffer);
+        //     pcmData.forEach((value, index) => {
+        //         view.setInt16(index * 2, value, true);
+        //     });
+
+        //     const base64 = btoa(
+        //         String.fromCharCode.apply(null, new Uint8Array(buffer))
+        //     );
+
+        //     sendVoiceMessage(base64);
+        //     pcmData = [];
+        // }
+
         function recordChunk() {
             const buffer = new ArrayBuffer(pcmData.length * 2);
             const view = new DataView(buffer);
@@ -725,13 +728,24 @@
                 view.setInt16(index * 2, value, true);
             });
 
-            const base64 = btoa(
-                String.fromCharCode.apply(null, new Uint8Array(buffer))
-            );
+            // --- 수정된 부분 ---
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            const CHUNK_SIZE = 8192; // 청크 크기 (환경에 따라 조절 가능)
+
+            for (let i = 0; i < len; i += CHUNK_SIZE) {
+                const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, len));
+                // apply 또는 spread syntax(...) 사용
+                binary += String.fromCharCode.apply(null, chunk);
+                // 또는: binary += String.fromCharCode(...chunk);
+            }
+            const base64 = btoa(binary);
+            // --- 수정 끝 ---
 
             sendVoiceMessage(base64);
             pcmData = [];
-        }
+        }        
 
         async function startAudioInput() {
             audioContext = new AudioContext({
@@ -928,6 +942,27 @@
         //          bar.style.height = `${targetHeightPx}px`;
         //      });
         // }        
+
+
+        window.addEventListener("load", async () => {
+            //await startScreenShare();
+            //setInterval(captureImage, 3000);
+
+            // Initialize audio context right away
+            await initializeAudioContext();
+            // console.log("[DEBUG] initializeAudioContext");
+
+            connect();
+            // console.log("[DEBUG] connect");
+
+            //자동시작처리 (chrome.exe --autoplay-policy=no-user-gesture-required 상태에서만 가능)
+            startButton.click();
+            // await startAudioInput();
+            // console.log("[DEBUG] startAudioInput");
+
+            // startTimer();
+            // console.log("[DEBUG] startTimer");
+        });
 
     </script>
 
