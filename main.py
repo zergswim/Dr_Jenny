@@ -14,6 +14,8 @@ import google.generativeai as generative
 import wave
 import numpy as np
 
+import memoryblock
+
 import mediblock as mb
 import config as cfg #define config.py
 
@@ -29,6 +31,10 @@ TRANSCRIPTION_MODEL = cfg.TRANSCRIPTION_MODEL
 
 SND_TRANSCRIP = cfg.SND_TRANSCRIP
 RCV_TRANSCRIP = cfg.RCV_TRANSCRIP
+
+#이전 메모리 블럭체인 정보 가져오기
+memory_chain = memoryblock.AgentMemoryBlockchain.load_chain()
+agent_id = "Dr.Jenny"
 
 #이전 메디컬 블럭체인 정보 보기
 my_medical_chain = mb.MedicalBlockchain.load_chain()
@@ -188,6 +194,9 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
         list_music_files = music_play.list_files_function_json
         play_music_file = music_play.play_file_function_json
 
+        record_agent_memory = memoryblock.record_agent_memory_json
+        recall_agent_memory = memoryblock.recall_agent_memory_json
+
         async def fn_turn_on_the_lights():
             print("fn_turn_on_the_lights: OK")
             # print("fn_turn_on_the_lights:", args)
@@ -224,6 +233,27 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
             except Exception as e:
                 print(f"Error in fn_retrieve_recent_mental_care_sessions: {e}")
                 return "error"        
+            
+        async def fn_record_agent_memory(args):
+            # function calling 호출용
+            print("[DEBUG] init. memory_chain", memory_chain)
+            # print(type(args), args)
+            args = dict(args)
+            # print(type(args), args)
+            memory_chain.record_memory(    
+                agent_id=agent_id,
+                memory_payload=args["memory_payload"],
+                context_summary=args["context_summary"],
+                current_goal=args["current_goal"],
+                session_id=args["current_goal"]
+            )
+            return "ok"
+            # 튕금.. 방지법은?
+            #await asyncio.to_thread(memory_chain.save_chain())
+
+        async def fn_recall_agent_memory(args):
+            # print(args)
+            return memory_chain.recall_latest_memory(agent_id)            
 
         config = {"generation_config": {
                     "response_modalities": ["AUDIO"],
@@ -242,7 +272,7 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                     "tools":[
                         {"google_search": {}},
                         # {'code_execution': {}},
-                        {'function_declarations': [summarize_mental_care_session, retrieve_recent_mental_care_sessions, get_remaining_timer_time, list_music_files, play_music_file, turn_on_the_lights_schema, turn_off_the_lights_schema]}
+                        {'function_declarations': [record_agent_memory, recall_agent_memory, summarize_mental_care_session, retrieve_recent_mental_care_sessions, get_remaining_timer_time, list_music_files, play_music_file, turn_on_the_lights_schema, turn_off_the_lights_schema]}
                     ],
                     #automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)                    
                 }
@@ -347,6 +377,8 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                 "get_remaining_timer_time": timer.get_remaining_timer_time,
                                                 "list_music_files": music_play.list_music_files,
                                                 "play_music_file": music_play.play_music_file,
+                                                "record_agent_memory": fn_record_agent_memory,
+                                                "recall_agent_memory": fn_recall_agent_memory,
                                             }
                                             # ... 다른 함수들도 필요하면 추가 ...
 
@@ -441,6 +473,8 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                     print("\n--- Final Integrity Check Before Exiting ---")
                     my_medical_chain.is_chain_valid()
 
+                    # 최종 메모리블럭 저장
+                    memory_chain.save_chain()
 
 
             # Start send loop
