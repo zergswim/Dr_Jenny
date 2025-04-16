@@ -340,23 +340,23 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                             arguments = call_info.args # dict 형태일 것으로 예상
 
                                             # 2. 함수 식별 및 호출
-                                            function_to_call = None
-                                            if function_name == 'summarize_mental_care_session':
-                                                function_to_call = fn_summarize_mental_care_session
-                                            if function_name == 'retrieve_recent_mental_care_sessions':
-                                                function_to_call = fn_retrieve_recent_mental_care_sessions
-                                            if function_name == 'get_remaining_timer_time':
-                                                function_to_call = timer.get_remaining_timer_time
-                                            if function_name == 'list_music_files':
-                                                function_to_call = music_play.list_music_files
-                                            if function_name == 'play_music_file':
-                                                function_to_call = music_play.play_music_file
+                                            #function_to_call = None
+                                            available_functions = {
+                                                "summarize_mental_care_session": fn_summarize_mental_care_session,
+                                                "retrieve_recent_mental_care_sessions": fn_retrieve_recent_mental_care_sessions,
+                                                "get_remaining_timer_time": timer.get_remaining_timer_time,
+                                                "list_music_files": music_play.list_music_files,
+                                                "play_music_file": music_play.play_music_file,
+                                            }
                                             # ... 다른 함수들도 필요하면 추가 ...
+
+                                            # 매핑된 딕셔너리에서 실제 함수 찾기
+                                            function_to_call = available_functions.get(function_name)
 
                                             if function_to_call:
                                                 # 3. 결과 얻기
                                                 # result = await function_to_call(**arguments) # **로 딕셔너리 인자 전달
-                                                result = await function_to_call(arguments) # **로 딕셔너리 인자 전달
+                                                result = await function_to_call(arguments) 
                                                 # print(f"[FN] 함수 실행 결과: {result}")
                                                 # print("[FN] call_info:", call_info)
 

@@ -41,12 +41,12 @@ Dr. Jenny는 다음과 같은 주요 구성 요소와 지식 영역을 활용합
 
   <!-- Coaching Box -->
   <div style="border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f8f8f8; border-radius: 5px; min-width: 150px; display: flex; flex-direction: column; justify-content: center;">
-    <strong>Coaching Counseling Psychology</strong>
+    <strong>Music Recommendation</strong>
   </div>
 
   <!-- Exercise Box -->
   <div style="border: 1px solid #ccc; padding: 15px; text-align: center; background-color: #f8f8f8; border-radius: 5px; min-width: 150px; display: flex; flex-direction: column; justify-content: center;">
-    <strong>Exercise Management</strong>
+    <strong>Coaching Counseling Psychology, Exercise Management</strong>
   </div>
 
 </div>
