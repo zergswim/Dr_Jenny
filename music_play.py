@@ -197,7 +197,7 @@ async def play_music_file(args) -> dict:
 
 list_files_function_json = {
     "name": "list_music_files",
-    "description": f"윈도우 환경의 '{MP3_BASE_DIR}' 폴더 및 모든 하위 폴더에서 음악 파일 목록을 검색하여 반환합니다.",
+    "description": f"음악 파일 목록을 검색하여 반환합니다.",
     "parameters": {
       "type": "object",
       "properties": {}
@@ -206,13 +206,13 @@ list_files_function_json = {
 
 play_file_function_json = {
     "name": "play_music_file",
-    "description": "제공된 전체 경로를 사용하여 윈도우의 기본 미디어 플레이어로 특정 music 파일을 재생합니다.",
+    "description": "제공된 경로를 사용하여 윈도우의 기본 미디어 플레이어로 특정 music 파일을 재생합니다.",
     "parameters": {
         "type": "object",
         "properties": {
             "file_path": {
             "type": "string",
-            "description": "재생할 music 파일의 전체 윈도우 경로 (예: '\\Artist\\Song Title.mp3'). list_music_files 함수에서 얻은 경로를 사용해야 합니다."
+            "description": "재생할 music 파일의 윈도우 경로 (예: '\\Artist\\Song Title.mp3'). list_music_files 함수에서 얻은 경로를 사용해야 합니다."
             }
         },
         "required": ["file_path"]

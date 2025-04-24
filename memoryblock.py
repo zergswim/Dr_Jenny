@@ -190,42 +190,63 @@ class AgentMemoryBlockchain:
         print(f"Successfully recorded memory for Agent '{agent_id}' in Block {new_index}.")
         return True
 
-    def recall_latest_memory(self, agent_id):
-        """
-        Retrieves the latest valid memory payload for the specified agent.
+    def recall_latest_memory(self, agent_id, num_to_recall=1): # num_to_recall 파라미터 추가 (기본값 1)
+            """
+            Retrieves the specified number of latest valid memory payloads for the given agent.
 
-        Args:
-            agent_id (str): The unique identifier for the agent whose memory is needed.
+            Args:
+                agent_id (str): The unique identifier for the agent whose memory is needed.
+                num_to_recall (int, optional): The maximum number of memory payloads to retrieve.
+                                            Defaults to 1.
 
-        Returns:
-            any: The latest memory payload if found and valid, otherwise None.
-        """
-        if not self.chain or len(self.chain) <= 1:
-            print(f"No memory records found for Agent '{agent_id}' (chain empty or only Genesis).")
-            return None
+            Returns:
+                list: A list containing the latest valid memory payloads found (up to num_to_recall).
+                    The list is ordered from most recent to oldest.
+                    Returns an empty list if no valid memories are found or if num_to_recall <= 0.
+            """
+            if not self.chain or len(self.chain) <= 1:
+                print(f"No memory records found for Agent '{agent_id}' (chain empty or only Genesis).")
+                return [] # 빈 리스트 반환
 
-        print(f"Searching for latest valid memory for Agent '{agent_id}'...")
-        # Iterate backwards from the newest block (excluding Genesis)
-        for block in reversed(self.chain[1:]):
-            if isinstance(block.data, dict) and block.data.get(AGENT_ID_FIELD) == agent_id:
-                print(f"Found potential record in Block {block.index} for Agent '{agent_id}'. Verifying...")
-                # 1. Verify data integrity using the signature stored within the block
-                if not block.is_data_valid():
-                    print(f"Warning: Data tampering detected in Block {block.index} for Agent '{agent_id}'. Skipping.")
-                    continue # Skip this block, look for the next older one
+            # num_to_recall 유효성 검사
+            if not isinstance(num_to_recall, int) or num_to_recall <= 0:
+                print(f"Warning: Invalid value for num_to_recall ({num_to_recall}). Must be a positive integer. Returning empty list.")
+                return []
 
-                # 2. (Implicitly checked by is_chain_valid, but good practice)
-                #    Verify block hash integrity (optional here if is_chain_valid is used elsewhere)
-                # if block.hash != block.calculate_hash():
-                #    print(f"Warning: Block hash mismatch in Block {block.index}. Skipping.")
-                #    continue
+            recalled_payloads = [] # 결과를 저장할 리스트
+            print(f"Searching for latest {num_to_recall} valid memory entries for Agent '{agent_id}'...") # 출력 메시지 수정
 
-                # If data is valid, this is the latest valid memory for this agent
-                print(f"Found valid memory in Block {block.index}. Recalling payload.")
-                return block.data.get(MEMORY_PAYLOAD_FIELD)
+            # Iterate backwards from the newest block (excluding Genesis)
+            for block in reversed(self.chain[1:]):
+                # 이미 원하는 개수를 찾았다면 루프 종료
+                if len(recalled_payloads) >= num_to_recall:
+                    break
 
-        print(f"No valid memory records found for Agent '{agent_id}' after checking the chain.")
-        return None
+                if isinstance(block.data, dict) and block.data.get(AGENT_ID_FIELD) == agent_id:
+                    # print(f"Found potential record in Block {block.index} for Agent '{agent_id}'. Verifying...") # 상세 검증 로그는 필요시 활성화
+                    # 1. Verify data integrity using the signature stored within the block
+                    if not block.is_data_valid():
+                        print(f"Warning: Data tampering detected in Block {block.index} for Agent '{agent_id}'. Skipping.")
+                        continue # Skip this block, look for the next older one
+
+                    # 2. Block hash integrity check (optional, usually done by is_chain_valid)
+                    # if block.hash != block.calculate_hash():
+                    #    print(f"Warning: Block hash mismatch in Block {block.index}. Skipping.")
+                    #    continue
+
+                    # If data is valid, add the payload to the list
+                    # print(f"Found valid memory in Block {block.index}. Adding payload.") # 상세 로그는 필요시 활성화
+                    payload = block.data.get(MEMORY_PAYLOAD_FIELD)
+                    if payload is not None: # 페이로드가 None이 아닌지 확인
+                        recalled_payloads.append(payload) # 리스트에 추가
+
+            # 최종 결과 출력 및 반환
+            if not recalled_payloads:
+                print(f"No valid memory records found for Agent '{agent_id}' after checking the chain.")
+            else:
+                print(f"Found {len(recalled_payloads)} valid memory payloads (up to {num_to_recall} requested).")
+
+            return recalled_payloads # 찾은 페이로드 리스트 반환 (최신 순서)
 
     def is_chain_valid(self):
         """Validates the entire blockchain integrity (Unchanged logic, crucial for trust)."""
@@ -345,10 +366,6 @@ class AgentMemoryBlockchain:
              print(f"No specific memory records found for Agent ID: {agent_id}")
         print(f"--- End of History (Showing {filtered_blocks}/{total_blocks} Blocks) ---\n")
 
-
-# memory_chain = AgentMemoryBlockchain.load_chain()
-# agent_id = "Dr.Jenny"
-
 # async def record_agent_memory(args):
 #     # function calling 호출용
 #     print("[DEBUG] init. memory_chain", memory_chain)
@@ -392,20 +409,20 @@ record_agent_memory_json = {
             },
             "context_summary": {
                 "type": "string",
-                "description": "(선택사항) 현재 작업 또는 대화의 맥락 요약. (Optional: A summary of the current task or conversation context.)"
+                "description": "현재 작업 또는 대화의 맥락 요약. (Optional: A summary of the current task or conversation context.)"
             },
             "current_goal": {
                 "type": "string",
-                "description": "(선택사항) 에이전트가 현재 추구하고 있는 목표. (Optional: The goal the agent is currently pursuing.)"
+                "description": "에이전트가 현재 추구하고 있는 목표. (Optional: The goal the agent is currently pursuing.)"
             },
             "session_id": {
                 "type": "string",
-                "description": "(선택사항) 현재 상호작용 세션을 식별하는 ID. (Optional: An ID to identify the current interaction session.)"
+                "description": "현재 상호작용 세션을 식별하는 ID. (Optional: An ID to identify the current interaction session.)"
             }
         },
         "required": [
             "agent_id",
-            "memory_payload"
+            "memory_payload",
         ]
     }
 }
@@ -429,8 +446,11 @@ recall_agent_memory_json = {
 }
 
 async def main():
-    args = {'memory_payload': {'user_prefs': {'music': 'classical', 'light': 'dim'}, 'last_task': 'function calling test'}, 'agent_id': 'jerry_agent', 'session_id': 'session_123', 'context_summary': 'Testing record_agent_memory function', 'current_goal': 'Successfully record agent memory'}
-    await record_agent_memory(args)
+    # args = {'memory_payload': {'user_prefs': {'music': 'classical', 'light': 'dim'}, 'last_task': 'function calling test'}, 'agent_id': 'jerry_agent', 'session_id': 'session_123', 'context_summary': 'Testing record_agent_memory function', 'current_goal': 'Successfully record agent memory'}
+    # await record_agent_memory(args)
+    memory_chain = AgentMemoryBlockchain.load_chain()
+    agent_id = "Dr.Jenny"
+    print(memory_chain.recall_latest_memory(agent_id, num_to_recall=5))
 
 # --- Example Agent Simulation ---
 if __name__ == "__main__":

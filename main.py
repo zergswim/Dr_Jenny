@@ -1,11 +1,14 @@
 ## pip install --upgrade google-genai==0.3.0 google-generativeai==0.8.3##
 ## pip install --upgrade google-generativeai
+## pip install websockets==13.0
+
+## pip install git+https://github.com/googleapis/python-genai.git
 
 import asyncio
 import json
-import json.tool
 import os
 import websockets
+
 from google import genai
 import base64
 import io
@@ -13,33 +16,27 @@ from pydub import AudioSegment
 import google.generativeai as generative
 import wave
 import numpy as np
+from google.genai import types
 
-import memoryblock
-
-import mediblock as mb
 import config as cfg #define config.py
 
-import timer
-import music_play
+import my_function_callings as mfc
 
+# import mediblock as mb
+# import timer
+# import music_play
+# import memoryblock
+# import agent_memory
+#chromadb 변경검토
 
 # Load API key from environment
 os.environ['GOOGLE_API_KEY'] = cfg.GOOGLE_API_KEY
 generative.configure(api_key=os.environ['GOOGLE_API_KEY'])
-MODEL = cfg.MODEL 
-TRANSCRIPTION_MODEL = cfg.TRANSCRIPTION_MODEL
+#MODEL = cfg.MODEL 
+#TRANSCRIPTION_MODEL = cfg.TRANSCRIPTION_MODEL
 
-SND_TRANSCRIP = cfg.SND_TRANSCRIP
-RCV_TRANSCRIP = cfg.RCV_TRANSCRIP
-
-#이전 메모리 블럭체인 정보 가져오기
-memory_chain = memoryblock.AgentMemoryBlockchain.load_chain()
-agent_id = "Dr.Jenny"
-
-#이전 메디컬 블럭체인 정보 보기
-my_medical_chain = mb.MedicalBlockchain.load_chain()
-
-#blockchain 에 signature 로 데이터 위변조를 막도록 데이터에 대한 해쉬코드가 들어가는 것 고려
+#SND_TRANSCRIP = cfg.SND_TRANSCRIP
+#RCV_TRANSCRIP = cfg.RCV_TRANSCRIP
 
 client = genai.Client(
   http_options={
@@ -102,190 +99,97 @@ def calculate_dbfs(pcm_bytes, bit_depth):
     dbfs = 20 * np.log10(rms / max_amplitude)
     return dbfs
 
-async def gemini_session_handler(client_websocket: websockets.WebSocketServerProtocol):
+
+# Load previous session handle from a file
+# You must delete the session_handle.json file to start a new session when last session was 
+# finished for a while.
+# def load_previous_session_handle():
+#     try:
+#         with open('session_handle.json', 'r') as f:
+#             data = json.load(f)
+#             print(f"Loaded previous session handle: {data.get('previous_session_handle', None)}")
+#             return data.get('previous_session_handle', None)
+#     except FileNotFoundError:
+#         return None
+
+# # Save previous session handle to a file
+# def save_previous_session_handle(handle):
+#     with open('session_handle.json', 'w') as f:
+#         json.dump({'previous_session_handle': handle}, f)
+
+previous_session_handle = None #load_previous_session_handle()
+print("Init. previous session handle: ", previous_session_handle, id(previous_session_handle))
+
+# async def gemini_session_handler(client_websocket: websockets.WebSocketServerProtocol):
+async def gemini_session_handler(client_websocket):
     """Handles the interaction with Gemini API within a websocket session."""
+    # global previous_session_handle # 전역 변수임을 명시    
+
     try:
-        config_message = await client_websocket.recv()
+        # config_message = await client_websocket.recv()
         # config_data = json.loads(config_message)
         # config = config_data.get("setup", {})
         # print(config)
         # return
 
-        turn_on_the_lights_schema = {'name': 'turn_on_the_lights'}
-        turn_off_the_lights_schema = {'name': 'turn_off_the_lights'}
-        summarize_mental_care_session = {
-            "name": "summarize_mental_care_session",
-            "description": "주치의가 상담자의 심리 및 멘탈 케어 상담 내용을 요약하고 기록합니다. (Summarizes and records the content of a psychological and mental care counseling session between a primary care physician and a patient.)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "patient_name": {
-                        "type": "string",
-                        "description": "상담을 받은 상담자(환자)의 이름. (Name of the patient who received counseling.)"
-                    },
-                    "session_date": {
-                        "type": "string",
-                        "description": "상담이 진행된 날짜 (예: '2024-07-30'). (Date the counseling session took place, e.g., '2024-07-30')"
-                    },
-                    "main_topics": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "상담에서 주로 다루어진 주제 또는 문제 목록. (List of main topics or issues discussed during the session.)"
-                    },
-                    "patient_reported_mood": {
-                        "type": "string",
-                        "description": "상담자가 보고한 자신의 기분이나 감정 상태 (예: '불안함', '우울함', '안정적임'). (Patient's self-reported mood or emotional state, e.g., 'Anxious', 'Depressed', 'Stable'.)"
-                    },
-                    "physician_observations": {
-                        "type": "string",
-                        "description": "주치의가 관찰한 상담자의 행동, 태도, 또는 중요한 비언어적 신호. (Physician's observations of the patient's behavior, attitude, or significant non-verbal cues.)"
-                    },
-                    "key_insights_or_progress": {
-                        "type": "string",
-                        "description": "상담을 통해 얻은 주요 통찰이나 상담자의 진전 사항. (Key insights gained or progress made by the patient during the session.)"
-                    },
-                    "action_plan": {
-                        "type": "string",
-                        "description": "다음 상담까지 상담자 또는 주치의가 수행하기로 합의한 구체적인 행동 계획 또는 과제. (Specific action plan or tasks agreed upon for the patient or physician to undertake before the next session.)"
-                    },
-                    "risk_assessment": {
-                        "type": "string",
-                        "description": "자해, 타해 위험 등 주치의가 평가한 잠재적 위험 요소 요약 (없을 경우 '없음'). (Summary of potential risk factors assessed by the physician, such as self-harm or harm to others. State 'None' if no risks identified.)"
-                    },
-                    "overall_assessment":{
-                        "type": "string",
-                        "description": "상담 내용에 대한 주치의의 전반적인 평가 및 요약. (Physician's overall assessment and summary of the session.)"
-                    }
-                },
-                "required": [
-                    "patient_name",
-                    "session_date",
-                    "main_topics",
-                    "action_plan",
-                    "overall_assessment",
-                    "risk_assessment"
-                ]
-            }
-        }
 
-        retrieve_recent_mental_care_sessions = {
-            "name": "retrieve_recent_mental_care_sessions",
-            "description": "가장 최근의 심리 및 멘탈 케어 상담 기록을 1개에서 5개까지 조회합니다. 특정 환자를 지정하거나 전체 최근 기록을 조회할 수 있습니다. (Retrieves the most recent mental care counseling session records, between 1 and 5 sessions. Can specify a patient or retrieve overall recent records.)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                "count": {
-                    "type": "integer",
-                    "description": "조회할 최근 상담 기록의 개수 (1에서 5 사이의 정수). 지정하지 않으면 기본값으로 1개의 가장 최근 기록을 조회합니다. (Number of recent session records to retrieve, an integer between 1 and 5. Defaults to 1 if not specified.)",
-                    "minimum": 1,
-                    "maximum": 5
-                },
-                "patient_name": {
-                    "type": "string",
-                    "description": "(선택사항) 특정 상담자(환자)의 최근 기록만 조회할 경우 이름 지정. 지정하지 않으면 시스템 전체의 최근 기록을 조회합니다. (Optional: Specify the patient's name to retrieve recent records only for that patient. If omitted, retrieves the most recent records across all patients.)"
-                }
-                },
-                "required": [] # count는 기본값이 있으므로 필수는 아님. patient_name도 선택사항.
-            }
-        }
+        config = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    #Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, and Zephyr.
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=cfg.VOICE)
+                ),
+                language_code='ko-KR',
+            ),
+            system_instruction=cfg.INSTRUCTION,
+            session_resumption=types.SessionResumptionConfig(
+                # The handle of the session to resume is passed here,
+                # or else None to start a new session.
+                handle=previous_session_handle
+            ),
+            output_audio_transcription=types.AudioTranscriptionConfig(
+                
+            ),
+            tools=[
+                {"google_search": {}},
+                # {'code_execution': {}},
+                {'function_declarations': mfc.function_declarations}
+                # {'function_declarations': [record_agent_memory, recall_agent_memory, summarize_mental_care_session, retrieve_recent_mental_care_sessions, get_remaining_timer_time, list_music_files, play_music_file]}
+            ],            
+        )
 
-        get_remaining_timer_time = timer.get_remaining_time_function_json
-
-        list_music_files = music_play.list_files_function_json
-        play_music_file = music_play.play_file_function_json
-
-        record_agent_memory = memoryblock.record_agent_memory_json
-        recall_agent_memory = memoryblock.recall_agent_memory_json
-
-        async def fn_turn_on_the_lights():
-            print("fn_turn_on_the_lights: OK")
-            # print("fn_turn_on_the_lights:", args)
-            return "test OK"
-        
-        async def fn_summarize_mental_care_session(msg):
-            try:
-                #print("msg:", msg)
-                mb.input_medical_record(my_medical_chain, msg)
-
-                # save 시 전체 종료? 왜?, (수정이 어려율시 마지막 저장 처리로 변경가능)
-                # --- Save the updated blockchain ---
-                # print("\n--- Saving Updated Blockchain ---")
-                # my_medical_chain.save_chain()
-
-                # --- Final Integrity Check ---
-                # print("\n--- Final Integrity Check Before Exiting ---")
-                # my_medical_chain.is_chain_valid()
-
-                #print("fn_summarize_mental_care_session: OK")
-                return "ok"
-            except Exception as e:
-                print(f"Error in fn_summarize_mental_care_session: {e}")
-                return "error"        
-
-        async def fn_retrieve_recent_mental_care_sessions(args):
-            try:
-                print("args:", args)
-
-                rtn = mb.view_last_n_records(my_medical_chain, args['count'])
-                # print("rtn:", rtn)
-
-                return rtn
-            except Exception as e:
-                print(f"Error in fn_retrieve_recent_mental_care_sessions: {e}")
-                return "error"        
-            
-        async def fn_record_agent_memory(args):
-            # function calling 호출용
-            print("[DEBUG] init. memory_chain", memory_chain)
-            # print(type(args), args)
-            args = dict(args)
-            # print(type(args), args)
-            memory_chain.record_memory(    
-                agent_id=agent_id,
-                memory_payload=args["memory_payload"],
-                context_summary=args["context_summary"],
-                current_goal=args["current_goal"],
-                session_id=args["current_goal"]
-            )
-            return "ok"
-            # 튕금.. 방지법은?
-            #await asyncio.to_thread(memory_chain.save_chain())
-
-        async def fn_recall_agent_memory(args):
-            # print(args)
-            return memory_chain.recall_latest_memory(agent_id)            
-
-        config = {"generation_config": {
-                    "response_modalities": ["AUDIO"],
-                    "speech_config": {
-                        "voice_config": {
-                        "prebuilt_voice_config": {"voice_name": "Aoede"}
-                        }
-                    }
-                    },
-                    "system_instruction": {
-                        "parts": [
-                            {"text": cfg.INSTRUCTION }
-                        ]
-                        # "role": "system"  # role 필드 제거 - 선택 사항이므로 제거 후 테스트
-                    },
-                    "tools":[
-                        {"google_search": {}},
-                        # {'code_execution': {}},
-                        {'function_declarations': [record_agent_memory, recall_agent_memory, summarize_mental_care_session, retrieve_recent_mental_care_sessions, get_remaining_timer_time, list_music_files, play_music_file, turn_on_the_lights_schema, turn_off_the_lights_schema]}
-                    ],
-                    #automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)                    
-                }
+        # config = {"generation_config": {
+        #             "response_modalities": ["AUDIO"],
+        #             "speech_config": {
+        #                 "voice_config": {
+        #                 "prebuilt_voice_config": {"voice_name": "Aoede"}
+        #                 }
+        #             }
+        #             },
+        #             "system_instruction": {
+        #                 "parts": [
+        #                     {"text": cfg.INSTRUCTION }
+        #                 ]
+        #                 # "role": "system"  # role 필드 제거 - 선택 사항이므로 제거 후 테스트
+        #             },
+        #             "tools":[
+        #                 {"google_search": {}},
+        #                 # {'code_execution': {}},
+        #                 {'function_declarations': [record_agent_memory, recall_agent_memory, summarize_mental_care_session, retrieve_recent_mental_care_sessions, get_remaining_timer_time, list_music_files, play_music_file]}
+        #             ],
+        #             #automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)                    
+        #         }
         
         # print(">> config:", config)
          
-        async with client.aio.live.connect(model=MODEL, config=config) as session:
+        async with client.aio.live.connect(model=cfg.MODEL, config=config) as session:
             session.isPlaying = False
-            print("Connected to Gemini API")
+            print("Connected to Gemini API, previous_session_handle:", previous_session_handle, id(previous_session_handle))
 
-            print(">> 타이머 시작:")
-            result_start = timer.start_consultation_timer()
-            print(f"결과: {result_start}\n") # status: started 예상            
+            # print(">> 타이머 시작:")
+            # result_start = timer.start_consultation_timer()
+            # print(f"결과: {result_start}\n") # status: started 예상            
 
             async def send_to_gemini():
                 """Sends messages from the client websocket to the Gemini API."""
@@ -299,7 +203,7 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                 for chunk in data["realtime_input"]["media_chunks"]:
                                     if chunk["mime_type"] == "audio/pcm":
 
-                                        if SND_TRANSCRIP:
+                                        if cfg.SND_TRANSCRIP:
                                             byted_chunk = base64.b64decode(chunk["data"])
                                             temp += byted_chunk
                                             #print("isPlaying:", session.isPlaying, "dbfs_chunk:", calculate_dbfs(byted_chunk, 16), "temp_size:", len(temp))
@@ -310,7 +214,8 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                 # Clear the accumulated audio data
                                                 # print("[CK]transcribed_text:", transcribed_text)
                                                 #print("[OK]Sended to Gemini:", len(temp))
-                                                await session.send({"mime_type": "audio/pcm", "data": temp})
+                                                # await session.send(input={"mime_type": "audio/pcm", "data": temp})
+                                                await session.send_realtime_input(media=types.Blob(data=temp, mime_type='audio/pcm;rate=16000'))
 
                                                 transcribed_text = transcribe_audio(temp)
                                                 temp = b''
@@ -322,11 +227,12 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                     }))
                                         else:
                                             # print("[OK]Sended to Gemini:", len(chunk["data"]), len(temp))
-                                            await session.send({"mime_type": "audio/pcm", "data": chunk["data"]})
+                                            # await session.send(input={"mime_type": "audio/pcm", "data": chunk["data"]})
+                                            await session.send_realtime_input(media=types.Blob(data=chunk["data"], mime_type='audio/pcm;rate=16000'))
                                         
                                     elif chunk["mime_type"] == "image/jpeg":
                                         if "data" in chunk.keys():
-                                            await session.send({"mime_type": "image/jpeg", "data": chunk["data"]})
+                                            await session.send(input={"mime_type": "image/jpeg", "data": chunk["data"]})
 
 
                     #   except asyncio.CancelledError: # CancelledError 먼저 처리
@@ -350,12 +256,42 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
 
             async def receive_from_gemini():
                 """Receives responses from the Gemini API and forwards them to the client, looping until turn is complete."""
+                global previous_session_handle # 전역 변수임을 명시(global 없이 중간에 선언시 unbound 발생)                
+                
                 try:
                     while True:
                         try:
-                            print("receiving from gemini")
+                            print(f"receiving from gemini: {previous_session_handle}")
 
                             async for response in session.receive():
+
+                                if response.session_resumption_update:
+                                    update = response.session_resumption_update
+                                    if update.resumable and update.new_handle:
+                                        # The handle should be retained and linked to the session.
+                                        previous_session_handle = update.new_handle
+                                        # save_previous_session_handle(previous_session_handle)
+                                        print("Resumed session update with handle: ", previous_session_handle, id(previous_session_handle))
+
+                                # if response.server_content and hasattr(response.server_content, 'output_transcription') and response.server_content.output_transcription is not None:
+                                    # await client_websocket.send(json.dumps({"text": response.server_content.output_transcription.text}))
+                                    # await client_websocket.send(json.dumps({
+                                    #     "transcription": {
+                                    #         "text": response.server_content.output_transcription.text,
+                                    #         "sender": "Gemini",
+                                    #         "finished": response.server_content.output_transcription.finished
+                                    #     }
+                                    # }))
+                                # if response.server_content and hasattr(response.server_content, 'input_transcription') and response.server_content.input_transcription is not None:
+                                    # await client_websocket.send(json.dumps({"text": response.server_content.input_transcription.text}))
+                                    # await client_websocket.send(json.dumps({
+                                    #     "transcription": {
+                                    #         "text": response.server_content.input_transcription.text,
+                                    #         "sender": "User",
+                                    #         "finished": response.server_content.input_transcription.finished
+                                    #     }
+                                    # }))                                        
+
                                 if response.server_content is None:
                                     #print(f'Unhandled server message! - {response}')
                                     if response.tool_call:
@@ -369,21 +305,8 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                             function_name = call_info.name
                                             arguments = call_info.args # dict 형태일 것으로 예상
 
-                                            # 2. 함수 식별 및 호출
-                                            #function_to_call = None
-                                            available_functions = {
-                                                "summarize_mental_care_session": fn_summarize_mental_care_session,
-                                                "retrieve_recent_mental_care_sessions": fn_retrieve_recent_mental_care_sessions,
-                                                "get_remaining_timer_time": timer.get_remaining_timer_time,
-                                                "list_music_files": music_play.list_music_files,
-                                                "play_music_file": music_play.play_music_file,
-                                                "record_agent_memory": fn_record_agent_memory,
-                                                "recall_agent_memory": fn_recall_agent_memory,
-                                            }
-                                            # ... 다른 함수들도 필요하면 추가 ...
-
                                             # 매핑된 딕셔너리에서 실제 함수 찾기
-                                            function_to_call = available_functions.get(function_name)
+                                            function_to_call = mfc.available_functions.get(function_name)
 
                                             if function_to_call:
                                                 # 3. 결과 얻기
@@ -392,13 +315,20 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                 # print(f"[FN] 함수 실행 결과: {result}")
                                                 # print("[FN] call_info:", call_info)
 
-                                                msg = [{
-                                                        'id': call_info.id,
-                                                        'name': call_info.name,
-                                                        'response':{'result': result}
-                                                }]
-                                                await session.send(msg)
-                                                print("[FN] Successfully sent function response to Gemini.", msg)
+                                                # msg = [{
+                                                #         'id': call_info.id,
+                                                #         'name': call_info.name,
+                                                #         'response':{'result': result}
+                                                # }]
+                                                function_response=types.FunctionResponse(
+                                                        name=call_info.name,
+                                                        response={'result': result},
+                                                        id=call_info.id,
+                                                    )
+
+                                                # await session.send(input=msg)
+                                                await session.send_tool_response(function_responses=function_response)
+                                                print("[FN] Successfully sent function response to Gemini.", function_response)
 
                                                 # 클라이언트 화면에 메시지 전달(옵션)
                                                 # print("[FN] client_websocket send: ", arguments)
@@ -429,7 +359,7 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                 #print("[OK]Sended to Client:", len(base64_audio))
                                                 await client_websocket.send(json.dumps({"audio": base64_audio}))
                                                 
-                                                if RCV_TRANSCRIP:
+                                                if cfg.RCV_TRANSCRIP:
                                                     # Accumulate the audio data here
                                                     if not hasattr(session, 'audio_data'):
                                                         session.audio_data = b''
@@ -437,7 +367,7 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                                                 
                                                 #임시주석처리 print("audio received")
 
-                                    if RCV_TRANSCRIP:
+                                    if cfg.RCV_TRANSCRIP:
                                         if response.server_content.turn_complete:
                                             print('\n<Turn complete>')
                                             session.isPlaying = False
@@ -457,24 +387,24 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
                             break  # Exit the loop if the connection is closed
                         except Exception as e:
                             print(f"[RCV] Error receiving from Gemini: \n{e}")
-                            #break 
+                            break 
 
                 except Exception as e:
                     print(f"While Loop : Error receiving from Gemini: \n{e}")
                 finally:
-                    print("While Loop : Gemini connection closed (receive)")
+                    print("While Loop : Gemini connection closed (receive)", previous_session_handle, id(previous_session_handle))
 
                     # 최종 블럭저장 로직 추가
                     # --- Save the updated blockchain ---
                     print("\n--- Saving Updated Blockchain ---")
-                    my_medical_chain.save_chain()
+                    mfc.my_medical_chain.save_chain()
 
                     # --- Final Integrity Check ---
                     print("\n--- Final Integrity Check Before Exiting ---")
-                    my_medical_chain.is_chain_valid()
+                    mfc.my_medical_chain.is_chain_valid()
 
                     # 최종 메모리블럭 저장
-                    memory_chain.save_chain()
+                    mfc.memory_chain.save_chain()
 
 
             # Start send loop
@@ -487,7 +417,7 @@ async def gemini_session_handler(client_websocket: websockets.WebSocketServerPro
     except Exception as e:
         print(f"Error in Gemini session: {e}")
     finally:
-        print("Gemini session closed.")
+        print("Gemini session closed. previous_session_handle:", previous_session_handle, id(previous_session_handle))
 
 def transcribe_audio(audio_data):
     """Transcribes audio using Gemini 1.5 Flash."""
@@ -502,7 +432,7 @@ def transcribe_audio(audio_data):
             return "Audio conversion failed."
             
         # Create a client specific for transcription (assuming Gemini 1.5 flash)
-        transcription_client = generative.GenerativeModel(model_name=TRANSCRIPTION_MODEL)
+        transcription_client = None #generative.GenerativeModel(model_name=cfg.TRANSCRIPTION_MODEL)
         
         prompt = """Generate a transcript of the speech. 
         Please do not include any other text in the response. 
