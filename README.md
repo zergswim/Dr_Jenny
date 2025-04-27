@@ -50,6 +50,10 @@ Dr. Jenny는 다음과 같은 주요 구성 요소와 지식 영역을 활용합
   </div>
 
 </div>
+<br>
+
+## Youtube 시연
+[![Image](https://github.com/user-attachments/assets/5a60d6d4-6818-4c2c-9f34-f4d0166e0908)](https://www.youtube.com/watch?v=Ji1o-ckRvPI)
 
 ---
 
