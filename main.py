@@ -261,7 +261,7 @@ async def gemini_session_handler(client_websocket):
                 try:
                     while True:
                         try:
-                            print(f"receiving from gemini: {previous_session_handle}")
+                            print(f"\n receiving from gemini: {previous_session_handle}")
 
                             async for response in session.receive():
 
@@ -273,7 +273,8 @@ async def gemini_session_handler(client_websocket):
                                         # save_previous_session_handle(previous_session_handle)
                                         print("Resumed session update with handle: ", previous_session_handle, id(previous_session_handle))
 
-                                # if response.server_content and hasattr(response.server_content, 'output_transcription') and response.server_content.output_transcription is not None:
+                                if response.server_content and hasattr(response.server_content, 'output_transcription') and response.server_content.output_transcription is not None:
+                                    print(response.server_content.output_transcription.text, end="") #한 글자씩 출력됨, 줄바꿈 제거
                                     # await client_websocket.send(json.dumps({"text": response.server_content.output_transcription.text}))
                                     # await client_websocket.send(json.dumps({
                                     #     "transcription": {
@@ -282,7 +283,9 @@ async def gemini_session_handler(client_websocket):
                                     #         "finished": response.server_content.output_transcription.finished
                                     #     }
                                     # }))
-                                # if response.server_content and hasattr(response.server_content, 'input_transcription') and response.server_content.input_transcription is not None:
+
+                                if response.server_content and hasattr(response.server_content, 'input_transcription') and response.server_content.input_transcription is not None:
+                                    print("input:?", response.server_content.input_transcription.text) #, end="") #한 글자씩 출력됨, 줄바꿈 제거
                                     # await client_websocket.send(json.dumps({"text": response.server_content.input_transcription.text}))
                                     # await client_websocket.send(json.dumps({
                                     #     "transcription": {
